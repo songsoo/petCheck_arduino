@@ -2,6 +2,8 @@ package com.example.firebase_test;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
+import androidx.core.view.GravityCompat;
+import androidx.drawerlayout.widget.DrawerLayout;
 
 import android.Manifest;
 import android.bluetooth.BluetoothAdapter;
@@ -29,6 +31,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.google.android.material.navigation.NavigationView;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 
@@ -44,8 +47,7 @@ public class BluetoothConnect extends AppCompatActivity {
     UUID BT_MODULE_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB"); // "random" unique identifier
 
     TextView textStatus;
-    TextView readContent;
-    Button btnParied, btnSearch, btnSend;
+    Button btnMenu;
     ListView listView1, listView2;
     TextView contentText;
     ScrollView contentScroll;
@@ -85,36 +87,38 @@ public class BluetoothConnect extends AppCompatActivity {
         contentScroll = findViewById(R.id.contentScroll);
         // variables
         textStatus = (TextView) findViewById(R.id.text_status);
-        btnParied = (Button) findViewById(R.id.btn_paired);
-        btnSearch = (Button) findViewById(R.id.btn_search);
-        btnSend = (Button) findViewById(R.id.btn_send);
+        btnMenu = (Button) findViewById(R.id.btn_menu);
         listView1 = (ListView) findViewById(R.id.listview1);
         listView2 = (ListView) findViewById(R.id.listview2);
+
+        final DrawerLayout drawerLayout = findViewById(R.id.bluetooth_Layout);
+
+        btnMenu.setOnClickListener(new View.OnClickListener(){
+            @Override
+            public void onClick(View v) {
+                pairedDevices();
+                searchDevices();
+                drawerLayout.openDrawer(GravityCompat.START);
+            }
+        });
+
+        NavigationView navigationview = findViewById(R.id.navigationView);
+        navigationview.setItemIconTintList(null);
+
 
         // Show paired devices
         btArrayAdapter1 = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1);
         btArrayAdapter2 = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1);
+
         deviceAddressArray1 = new ArrayList<>();
         deviceAddressArray2= new ArrayList<>();
+
         listView1.setAdapter(btArrayAdapter1);
         listView2.setAdapter(btArrayAdapter2);
 
         listView1.setOnItemClickListener(new myOnItemClickListener());
         listView2.setOnItemClickListener(new myOnItemClickListener());
 
-        btnParied.setOnClickListener(new View.OnClickListener(){
-            @Override
-            public void onClick(View v) {
-                //onClickButtonPaired(v);
-            }
-        });
-        Log.d(TAG,"Create 4");
-        btnSearch.setOnClickListener(new View.OnClickListener(){
-            @Override
-            public void onClick(View v) {
-                //onClickButtonSearch(v);
-            }
-        });
         Log.d(TAG,"Create 5");
         // Enable bluetooth
         btAdapter = BluetoothAdapter.getDefaultAdapter();
@@ -130,11 +134,6 @@ public class BluetoothConnect extends AppCompatActivity {
             startService(intent);
             bindService(intent, mConnection, Context.BIND_AUTO_CREATE);
         }
-        Log.d(TAG,"pair");
-        pairedDevices();
-        Log.d(TAG,"search");
-        searchDevices();
-        Log.d(TAG,"end");
 
     }
 
@@ -145,8 +144,18 @@ public class BluetoothConnect extends AppCompatActivity {
     final Handler handler = new Handler(){
         public void handleMessage(Message msg){
             Bundle bundle = msg.getData();
-            contentText.setText(contentText.getText()+bundle.getString("result"));
-            contentScroll.fullScroll(contentScroll.FOCUS_DOWN);
+            String result = bundle.getString("result");
+            String resultArr[] = result.split("/");
+            switch(resultArr[0]){
+                case "beat":
+                    contentText.setText(contentText.getText()+bundle.getString("result"));
+                    contentScroll.fullScroll(contentScroll.FOCUS_DOWN);
+                    break;
+                case "RMSSD":
+                    break;
+                case "GYRO":
+                    break;
+            }
         }
     };
 
@@ -194,10 +203,13 @@ public class BluetoothConnect extends AppCompatActivity {
                 // object and its info from the Intent.
                 BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
                 String deviceName = device.getName();
-                String deviceHardwareAddress = device.getAddress(); // MAC address
-                btArrayAdapter2.add(deviceName);
-                deviceAddressArray2.add(deviceHardwareAddress);
-                btArrayAdapter2.notifyDataSetChanged();
+
+                if(deviceName!=null) {
+                    String deviceHardwareAddress = device.getAddress(); // MAC address
+                    btArrayAdapter2.add(deviceName);
+                    deviceAddressArray2.add(deviceHardwareAddress);
+                    btArrayAdapter2.notifyDataSetChanged();
+                }
             }
         }
     };
@@ -219,6 +231,7 @@ public class BluetoothConnect extends AppCompatActivity {
             name = btArrayAdapter1.getItem(position); // get name
             final String address = deviceAddressArray1.get(position); // get address
             if (address.length() != 0){
+                Log.d(TAG,address);
                 textStatus.setText("try...");
                 flag = true;
                 BluetoothDevice device = btAdapter.getRemoteDevice(address);
@@ -260,7 +273,6 @@ public class BluetoothConnect extends AppCompatActivity {
             String value = msg.getData().getString("test");
             contentText.setText(contentText.getText()+value);
             contentScroll.fullScroll(contentScroll.FOCUS_DOWN);
-            Log.d(TAG,contentText.getText().toString());
             Log.d(TAG,"Received/"+value);
             return false;
         }
