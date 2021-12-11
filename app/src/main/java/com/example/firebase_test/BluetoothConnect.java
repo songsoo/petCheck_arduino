@@ -2,8 +2,10 @@ package com.example.firebase_test;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import androidx.core.view.GravityCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import android.Manifest;
 import android.bluetooth.BluetoothAdapter;
@@ -15,6 +17,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
+import android.graphics.Color;
+import android.graphics.DashPathEffect;
+import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
@@ -26,11 +31,25 @@ import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.ListView;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.github.mikephil.charting.charts.LineChart;
+import com.github.mikephil.charting.components.Legend;
+import com.github.mikephil.charting.components.XAxis;
+import com.github.mikephil.charting.components.YAxis;
+import com.github.mikephil.charting.data.Entry;
+import com.github.mikephil.charting.data.LineData;
+import com.github.mikephil.charting.data.LineDataSet;
+import com.github.mikephil.charting.formatter.IFillFormatter;
+import com.github.mikephil.charting.highlight.Highlight;
+import com.github.mikephil.charting.interfaces.dataprovider.LineDataProvider;
+import com.github.mikephil.charting.interfaces.datasets.ILineDataSet;
+import com.github.mikephil.charting.listener.OnChartValueSelectedListener;
+import com.github.mikephil.charting.utils.Utils;
 import com.google.android.material.navigation.NavigationView;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
@@ -41,7 +60,7 @@ import java.util.ArrayList;
 import java.util.Set;
 import java.util.UUID;
 
-public class BluetoothConnect extends AppCompatActivity {
+public class BluetoothConnect extends AppCompatActivity implements OnChartValueSelectedListener , SwipeRefreshLayout.OnRefreshListener{
 
     String TAG = "movmov";
     UUID BT_MODULE_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB"); // "random" unique identifier
@@ -49,8 +68,11 @@ public class BluetoothConnect extends AppCompatActivity {
     TextView textStatus;
     Button btnMenu;
     ListView listView1, listView2;
-    TextView contentText;
-    ScrollView contentScroll;
+    LineChart bpmChart;
+    ImageView stressImg;
+
+    int count = 30;
+    int i = 0;
 
     private Messenger mServiceMessenger = null;
 
@@ -58,6 +80,10 @@ public class BluetoothConnect extends AppCompatActivity {
     Set<BluetoothDevice> pairedDevices;
     ArrayAdapter<String> btArrayAdapter1,btArrayAdapter2;
     ArrayList<String> deviceAddressArray1, deviceAddressArray2;
+    DrawerLayout drawerLayout;
+    SwipeRefreshLayout swipeRefreshLayout;
+
+    ArrayList<Entry> values = new ArrayList<>();
 
     FirebaseDatabase database = FirebaseDatabase.getInstance();
     DatabaseReference myRef = database.getReference("dog Check");
@@ -72,7 +98,6 @@ public class BluetoothConnect extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        Log.d(TAG,"Create 1");
 
         setContentView(R.layout.activity_bluetooth_connect);
 
@@ -82,29 +107,31 @@ public class BluetoothConnect extends AppCompatActivity {
                 Manifest.permission.ACCESS_COARSE_LOCATION
         };
         ActivityCompat.requestPermissions(BluetoothConnect.this, permission_list, 1);
-        Log.d(TAG,"Create 2");
-        contentText = findViewById(R.id.readContent);
-        contentScroll = findViewById(R.id.contentScroll);
-        // variables
+
+
         textStatus = (TextView) findViewById(R.id.text_status);
         btnMenu = (Button) findViewById(R.id.btn_menu);
         listView1 = (ListView) findViewById(R.id.listview1);
         listView2 = (ListView) findViewById(R.id.listview2);
+        stressImg = findViewById(R.id.stressImg);
 
-        final DrawerLayout drawerLayout = findViewById(R.id.bluetooth_Layout);
+        bpmChart = findViewById(R.id.bpm_chart);
+
+        drawerLayout = findViewById(R.id.bluetooth_Layout);
 
         btnMenu.setOnClickListener(new View.OnClickListener(){
             @Override
             public void onClick(View v) {
                 pairedDevices();
-                searchDevices();
                 drawerLayout.openDrawer(GravityCompat.START);
             }
         });
 
+        swipeRefreshLayout = findViewById(R.id.swipeLayout);
+        swipeRefreshLayout.setOnRefreshListener(this);
+
         NavigationView navigationview = findViewById(R.id.navigationView);
         navigationview.setItemIconTintList(null);
-
 
         // Show paired devices
         btArrayAdapter1 = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1);
@@ -119,14 +146,19 @@ public class BluetoothConnect extends AppCompatActivity {
         listView1.setOnItemClickListener(new myOnItemClickListener());
         listView2.setOnItemClickListener(new myOnItemClickListener());
 
-        Log.d(TAG,"Create 5");
+        createChart();
+        setData(count, 0);
+        bpmChart.animateX(1500);
+        Legend l = bpmChart.getLegend();
+        l.setForm(Legend.LegendForm.LINE);
+
         // Enable bluetooth
         btAdapter = BluetoothAdapter.getDefaultAdapter();
         if (!btAdapter.isEnabled()) {
             Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
             startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
         }
-        contentText.setText("hmm...");
+
 
         if(flag){
             textStatus.setText("connected to "+name);
@@ -134,6 +166,7 @@ public class BluetoothConnect extends AppCompatActivity {
             startService(intent);
             bindService(intent, mConnection, Context.BIND_AUTO_CREATE);
         }
+
 
     }
 
@@ -144,18 +177,6 @@ public class BluetoothConnect extends AppCompatActivity {
     final Handler handler = new Handler(){
         public void handleMessage(Message msg){
             Bundle bundle = msg.getData();
-            String result = bundle.getString("result");
-            String resultArr[] = result.split("/");
-            switch(resultArr[0]){
-                case "beat":
-                    contentText.setText(contentText.getText()+bundle.getString("result"));
-                    contentScroll.fullScroll(contentScroll.FOCUS_DOWN);
-                    break;
-                case "RMSSD":
-                    break;
-                case "GYRO":
-                    break;
-            }
         }
     };
 
@@ -194,7 +215,6 @@ public class BluetoothConnect extends AppCompatActivity {
     }
 
 
-    // Create a BroadcastReceiver for ACTION_FOUND.
     private final BroadcastReceiver receiver = new BroadcastReceiver() {
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
@@ -221,6 +241,22 @@ public class BluetoothConnect extends AppCompatActivity {
         super.onDestroy();
     }
 
+    @Override
+    public void onValueSelected(Entry e, Highlight h) {
+
+    }
+
+    @Override
+    public void onNothingSelected() {
+
+    }
+
+    @Override
+    public void onRefresh() {
+        searchDevices();
+        swipeRefreshLayout.setRefreshing(false);
+    }
+
     public class myOnItemClickListener implements AdapterView.OnItemClickListener {
         @Override
         public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
@@ -231,7 +267,6 @@ public class BluetoothConnect extends AppCompatActivity {
             name = btArrayAdapter1.getItem(position); // get name
             final String address = deviceAddressArray1.get(position); // get address
             if (address.length() != 0){
-                Log.d(TAG,address);
                 textStatus.setText("try...");
                 flag = true;
                 BluetoothDevice device = btAdapter.getRemoteDevice(address);
@@ -252,6 +287,7 @@ public class BluetoothConnect extends AppCompatActivity {
                     Intent intent = new Intent(getApplicationContext(), MyService.class);
                     startService(intent);
                     bindService(intent, mConnection, Context.BIND_AUTO_CREATE);
+                    drawerLayout.closeDrawer(GravityCompat.START);
                 }
             }
         }
@@ -271,9 +307,29 @@ public class BluetoothConnect extends AppCompatActivity {
         @Override
         public boolean handleMessage(Message msg) {
             String value = msg.getData().getString("test");
-            contentText.setText(contentText.getText()+value);
-            contentScroll.fullScroll(contentScroll.FOCUS_DOWN);
-            Log.d(TAG,"Received/"+value);
+            String resultArr[] = value.split("/");
+            Log.d(TAG,"protocol: "+resultArr[0]);
+            switch(resultArr[0]){
+                case "beat":
+                    int bpm = Integer.valueOf(resultArr[1]);
+                    Log.d(TAG,"BPM: "+bpm);
+                    setData(count,bpm);
+                    bpmChart.invalidate();
+                    break;
+                case "RMSSD":
+                    double PreRMSSD = Double.valueOf(resultArr[1]);
+                    double CurRMSSD = Double.valueOf(resultArr[2]);
+                    if(CurRMSSD>500){
+                        stressImg.setImageResource(R.drawable.sad);
+                    }else if(CurRMSSD>200){
+                        stressImg.setImageResource(R.drawable.normal);
+                    }else{
+                        stressImg.setImageResource(R.drawable.happy);
+                    }
+                    break;
+                case "GYRO":
+                    break;
+            }
             return false;
         }
     }));
@@ -281,7 +337,6 @@ public class BluetoothConnect extends AppCompatActivity {
     private ServiceConnection mConnection = new ServiceConnection() {
         @Override
         public void onServiceConnected(ComponentName componentName, IBinder iBinder) {
-            Log.d("test","onServiceConnected");
             mServiceMessenger = new Messenger(iBinder);
             try {
                 Message msg = Message.obtain(null,0);
@@ -295,5 +350,112 @@ public class BluetoothConnect extends AppCompatActivity {
         public void onServiceDisconnected(ComponentName componentName) {
         }
     };
+
+    private void createChart(){
+        {   // // Chart Style // //
+            bpmChart.setBackgroundColor(Color.WHITE);
+            bpmChart.getDescription().setEnabled(false);
+            bpmChart.setTouchEnabled(true);
+            bpmChart.setOnChartValueSelectedListener(this);
+            bpmChart.setDrawGridBackground(false);
+            bpmChart.setDragEnabled(true);
+            bpmChart.setScaleEnabled(true);
+            bpmChart.setPinchZoom(true);
+        }
+
+        XAxis xAxis = bpmChart.getXAxis();
+        xAxis.setEnabled(false);
+
+        YAxis yAxis;
+        {
+            yAxis = bpmChart.getAxisLeft();
+            bpmChart.getAxisRight().setEnabled(false);
+            yAxis.enableGridDashedLine(10f, 10f, 0f);
+            yAxis.setAxisMaximum(200f);
+            yAxis.setAxisMinimum(0f);
+        }
+    }
+
+    private void setChart() {
+        LineChart lineChart = bpmChart;
+        lineChart.invalidate(); //차트 초기화 작업
+        lineChart.clear();
+        ArrayList<Entry> values = new ArrayList<>();
+    }
+
+    private void setData(int count, int val) {
+
+        values.add(new Entry(i++, val, getResources().getDrawable(R.drawable.star)));
+        if(values.size()>count){
+            values.remove(0);
+        }
+        LineDataSet set1;
+
+        if (bpmChart.getData() != null &&
+                bpmChart.getData().getDataSetCount() > 0) {
+            set1 = (LineDataSet) bpmChart.getData().getDataSetByIndex(0);
+            set1.setValues(values);
+            set1.notifyDataSetChanged();
+            bpmChart.getData().notifyDataChanged();
+            bpmChart.notifyDataSetChanged();
+        } else {
+            // create a dataset and give it a type
+            set1 = new LineDataSet(values, "BPM");
+
+            set1.setDrawIcons(false);
+
+            // draw dashed line
+            set1.enableDashedLine(10f, 5f, 0f);
+
+            // black lines and points
+            set1.setColor(Color.BLACK);
+            set1.setCircleColor(Color.BLACK);
+
+            // line thickness and point size
+            set1.setLineWidth(1f);
+            set1.setCircleRadius(3f);
+
+            // draw points as solid circles
+            set1.setDrawCircleHole(false);
+
+            // customize legend entry
+            set1.setFormLineWidth(1f);
+            set1.setFormLineDashEffect(new DashPathEffect(new float[]{10f, 5f}, 0f));
+            set1.setFormSize(15.f);
+
+            // text size of values
+            set1.setValueTextSize(9f);
+
+            // draw selection line as dashed
+            set1.enableDashedHighlightLine(10f, 5f, 0f);
+
+            // set the filled area
+            set1.setDrawFilled(true);
+            set1.setFillFormatter(new IFillFormatter() {
+                @Override
+                public float getFillLinePosition(ILineDataSet dataSet, LineDataProvider dataProvider) {
+                    return bpmChart.getAxisLeft().getAxisMinimum();
+                }
+            });
+
+            // set color of filled area
+            if (Utils.getSDKInt() >= 18) {
+                // drawables only supported on api level 18 and above
+                Drawable drawable = ContextCompat.getDrawable(this, R.drawable.fade_teal);
+                set1.setFillDrawable(drawable);
+            } else {
+                set1.setFillColor(Color.BLACK);
+            }
+
+            ArrayList<ILineDataSet> dataSets = new ArrayList<>();
+            dataSets.add(set1); // add the data sets
+
+            // create a data object with the data sets
+            LineData data = new LineData(dataSets);
+
+            // set data
+            bpmChart.setData(data);
+        }
+    }
 
 }

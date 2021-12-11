@@ -54,20 +54,14 @@ public class MyService extends Service {
 
     public void onCreate(){
         super.onCreate();
-        Log.d(TAG,"onCreate");
-
     }
 
     public int onStartCommand(Intent intent, int flags, int startId){
-        Log.d(TAG,"onStartCommand() called");
-
         if(intent == null){
             return Service.START_STICKY;
         }else{
             String command = intent.getStringExtra("command");
-            String name = intent.getStringExtra("name");
-            Log.d(TAG,"데이터: "+command+","+name);
-            String btString = intent.getStringExtra("btSocket");
+            String name = intent.getStringExtra("name");String btString = intent.getStringExtra("btSocket");
 
             connectedThread = new ConnectedThread(BluetoothConnect.btSocket);
             connectedThread.start();
@@ -77,14 +71,11 @@ public class MyService extends Service {
     }
 
     public void onDestroy(){
-        super.onDestroy();
-        Log.d(TAG,"onDestroy() called");
-    }
+        super.onDestroy(); }
 
     final Handler handler = new Handler(){
         public void handleMessage(Message msg){
             Bundle bundle = msg.getData();
-            Log.d(TAG,bundle.getString("result"));
             sendMsgToActivity(0,bundle.getString("result"));
         }
     };
@@ -105,7 +96,6 @@ public class MyService extends Service {
             Message msg = Message.obtain(null, 0);
             msg.setData(bundle);
             mClient.send(msg);
-            Log.d(TAG,"sent/"+value);
         } catch (RemoteException e) {
         }
     }

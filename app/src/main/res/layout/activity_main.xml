@@ -13,6 +13,7 @@
         android:id="@+id/btn_to_bluetooth"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Check Bluetooth" />
+        android:text="Check Bluetooth"
+        android:backgroundTint="@color/teal_200"/>
 
 </LinearLayout>
