@@ -84,7 +84,7 @@ public class MyService extends Service {
         @Override
         public boolean handleMessage(Message msg) {
             Log.w(TAG,"ControlService - message what : "+msg.what +" , msg.obj "+ msg.obj);
-            mClient = msg.replyTo;  // activity로부터 가져온
+            mClient = msg.replyTo;
             return false;
         }
     }));

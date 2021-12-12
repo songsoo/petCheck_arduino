@@ -1,5 +1,6 @@
 package com.example.firebase_test;
 
+import androidx.annotation.ColorInt;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
@@ -8,6 +9,7 @@ import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
@@ -20,6 +22,7 @@ import android.content.ServiceConnection;
 import android.graphics.Color;
 import android.graphics.DashPathEffect;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
@@ -37,6 +40,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.github.mikephil.charting.charts.Chart;
 import com.github.mikephil.charting.charts.LineChart;
 import com.github.mikephil.charting.components.Legend;
 import com.github.mikephil.charting.components.XAxis;
@@ -65,14 +69,15 @@ public class BluetoothConnect extends AppCompatActivity implements OnChartValueS
     String TAG = "movmov";
     UUID BT_MODULE_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB"); // "random" unique identifier
 
-    TextView textStatus;
+    TextView textStatus,stressText,RMSSDText;
     Button btnMenu;
     ListView listView1, listView2;
-    LineChart bpmChart;
+    LineChart bpmChart,RMSSDChart;
     ImageView stressImg;
+    NavigationView navigationview;
 
-    int count = 30;
-    int i = 0;
+    int count = 20;
+    public static int i = 0;
 
     private Messenger mServiceMessenger = null;
 
@@ -83,7 +88,8 @@ public class BluetoothConnect extends AppCompatActivity implements OnChartValueS
     DrawerLayout drawerLayout;
     SwipeRefreshLayout swipeRefreshLayout;
 
-    ArrayList<Entry> values = new ArrayList<>();
+    public static ArrayList<Entry> bpm_values = new ArrayList<>();
+    public static ArrayList<Entry> RMSSD_values = new ArrayList<>();
 
     FirebaseDatabase database = FirebaseDatabase.getInstance();
     DatabaseReference myRef = database.getReference("dog Check");
@@ -92,31 +98,39 @@ public class BluetoothConnect extends AppCompatActivity implements OnChartValueS
     public static BluetoothSocket btSocket = null;
     public static boolean flag = false;
     public static String name;
-
+    public static double RMSSD=-1;
+    public static int stressStatus=-1;
 
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
 
+        super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_bluetooth_connect);
 
-        // Get permission
-        String[] permission_list = {
-                Manifest.permission.ACCESS_FINE_LOCATION,
-                Manifest.permission.ACCESS_COARSE_LOCATION
-        };
-        ActivityCompat.requestPermissions(BluetoothConnect.this, permission_list, 1);
+        Log.d(TAG,"protocol: ");
+        Log.d(TAG,"protocol: ");
+        Log.d(TAG,"protocol: ");
+        setVariables();
+        setBluetooth();
+        createChart();
+
+    }
 
 
+
+    @SuppressLint("UseCompatLoadingForDrawables")
+    public void setVariables(){
         textStatus = (TextView) findViewById(R.id.text_status);
+        stressText = (TextView) findViewById(R.id.stressText);
+        RMSSDText = findViewById(R.id.RMSSDText);
         btnMenu = (Button) findViewById(R.id.btn_menu);
         listView1 = (ListView) findViewById(R.id.listview1);
         listView2 = (ListView) findViewById(R.id.listview2);
         stressImg = findViewById(R.id.stressImg);
 
         bpmChart = findViewById(R.id.bpm_chart);
-
+        RMSSDChart = findViewById(R.id.RMSSD_chart);
         drawerLayout = findViewById(R.id.bluetooth_Layout);
 
         btnMenu.setOnClickListener(new View.OnClickListener(){
@@ -133,6 +147,36 @@ public class BluetoothConnect extends AppCompatActivity implements OnChartValueS
         NavigationView navigationview = findViewById(R.id.navigationView);
         navigationview.setItemIconTintList(null);
 
+        if(RMSSD!=-1){
+            RMSSDText.setText(Double.toString(RMSSD));
+        }
+        if(stressStatus!=-1){
+            switch(stressStatus){
+                case 0:
+                    stressImg.setImageResource(R.drawable.happy);
+                    stressText.setText("Low");
+                    break;
+                case 1:
+                    stressImg.setImageResource(R.drawable.normal);
+                    stressText.setText("Normal");
+                    break;
+                case 2:
+                    stressImg.setImageResource(R.drawable.sad);
+                    stressText.setText("High");
+                    break;
+            }
+        }
+
+    }
+
+    public void setBluetooth(){
+
+        String[] permission_list = {
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+        };
+        ActivityCompat.requestPermissions(BluetoothConnect.this, permission_list, 1);
+
         // Show paired devices
         btArrayAdapter1 = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1);
         btArrayAdapter2 = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1);
@@ -145,12 +189,6 @@ public class BluetoothConnect extends AppCompatActivity implements OnChartValueS
 
         listView1.setOnItemClickListener(new myOnItemClickListener());
         listView2.setOnItemClickListener(new myOnItemClickListener());
-
-        createChart();
-        setData(count, 0);
-        bpmChart.animateX(1500);
-        Legend l = bpmChart.getLegend();
-        l.setForm(Legend.LegendForm.LINE);
 
         // Enable bluetooth
         btAdapter = BluetoothAdapter.getDefaultAdapter();
@@ -167,11 +205,6 @@ public class BluetoothConnect extends AppCompatActivity implements OnChartValueS
             bindService(intent, mConnection, Context.BIND_AUTO_CREATE);
         }
 
-
-    }
-
-    protected void onResume(Bundle savedInstanceState){
-        super.onResume();
     }
 
     final Handler handler = new Handler(){
@@ -181,6 +214,7 @@ public class BluetoothConnect extends AppCompatActivity implements OnChartValueS
     };
 
     public void pairedDevices(){
+        Log.d(TAG,"paired!");
         btArrayAdapter1.clear();
         if(deviceAddressArray1!=null && !deviceAddressArray1.isEmpty()){ deviceAddressArray1.clear(); }
         pairedDevices = btAdapter.getBondedDevices();
@@ -233,7 +267,6 @@ public class BluetoothConnect extends AppCompatActivity implements OnChartValueS
             }
         }
     };
-
 
 
     @Override
@@ -307,28 +340,44 @@ public class BluetoothConnect extends AppCompatActivity implements OnChartValueS
         @Override
         public boolean handleMessage(Message msg) {
             String value = msg.getData().getString("test");
-            String resultArr[] = value.split("/");
-            Log.d(TAG,"protocol: "+resultArr[0]);
-            switch(resultArr[0]){
-                case "beat":
-                    int bpm = Integer.valueOf(resultArr[1]);
-                    Log.d(TAG,"BPM: "+bpm);
-                    setData(count,bpm);
-                    bpmChart.invalidate();
-                    break;
-                case "RMSSD":
-                    double PreRMSSD = Double.valueOf(resultArr[1]);
-                    double CurRMSSD = Double.valueOf(resultArr[2]);
-                    if(CurRMSSD>500){
-                        stressImg.setImageResource(R.drawable.sad);
-                    }else if(CurRMSSD>200){
-                        stressImg.setImageResource(R.drawable.normal);
-                    }else{
-                        stressImg.setImageResource(R.drawable.happy);
-                    }
-                    break;
-                case "GYRO":
-                    break;
+            String protoArr[] = value.split("#");
+            for(String protocols : protoArr) {
+                Log.d(TAG,protocols);
+                String resultArr[] = protocols.split("/");
+                switch (resultArr[0]) {
+                    case "beat":
+                        int bpm = Integer.valueOf(resultArr[1]);
+                        Log.d(TAG, "BPM: " + bpm);
+                        setData(count, bpm,0);
+                        bpmChart.invalidate();
+                        break;
+                    case "RMSSD":
+                        double PreRMSSD = Double.valueOf(resultArr[1]);
+                        double CurRMSSD = Double.valueOf(resultArr[2]);
+                        Log.d(TAG, "RMSSD: " + CurRMSSD);
+                        RMSSD = CurRMSSD;
+                        setData(count, (int)CurRMSSD,1);
+                        RMSSDChart.invalidate();
+                        if (CurRMSSD > 500) {
+                            stressImg.setImageResource(R.drawable.sad);
+                            stressText.setText("HIGH");
+                            RMSSDText.setText(Double.toString(CurRMSSD));
+                            stressStatus = 2;
+                        } else if (CurRMSSD > 200) {
+                            stressImg.setImageResource(R.drawable.normal);
+                            stressText.setText("Normal");
+                            RMSSDText.setText(Double.toString(CurRMSSD));
+                            stressStatus = 1;
+                        } else {
+                            stressImg.setImageResource(R.drawable.happy);
+                            stressText.setText("LOW");
+                            RMSSDText.setText(Double.toString(CurRMSSD));
+                            stressStatus = 0;
+                        }
+                        break;
+                    case "GYRO":
+                        break;
+                }
             }
             return false;
         }
@@ -361,19 +410,64 @@ public class BluetoothConnect extends AppCompatActivity implements OnChartValueS
             bpmChart.setDragEnabled(true);
             bpmChart.setScaleEnabled(true);
             bpmChart.setPinchZoom(true);
+
+            RMSSDChart.setBackgroundColor(Color.WHITE);
+            RMSSDChart.getDescription().setEnabled(false);
+            RMSSDChart.setTouchEnabled(true);
+            RMSSDChart.setOnChartValueSelectedListener(this);
+            RMSSDChart.setDrawGridBackground(false);
+            RMSSDChart.setDragEnabled(true);
+            RMSSDChart.setScaleEnabled(true);
+            RMSSDChart.setPinchZoom(true);
         }
 
-        XAxis xAxis = bpmChart.getXAxis();
-        xAxis.setEnabled(false);
+        XAxis bpm_xAxis = bpmChart.getXAxis();
+        bpm_xAxis.setEnabled(false);
 
-        YAxis yAxis;
+        YAxis bpm_yAxis;
         {
-            yAxis = bpmChart.getAxisLeft();
+            bpm_yAxis = bpmChart.getAxisLeft();
             bpmChart.getAxisRight().setEnabled(false);
-            yAxis.enableGridDashedLine(10f, 10f, 0f);
-            yAxis.setAxisMaximum(200f);
-            yAxis.setAxisMinimum(0f);
+            bpm_yAxis.enableGridDashedLine(10f, 10f, 0f);
+            bpm_yAxis.setAxisMaximum(250f);
+            bpm_yAxis.setAxisMinimum(0f);
         }
+
+        XAxis RMSSD_xAxis = RMSSDChart.getXAxis();
+        RMSSD_xAxis.setEnabled(false);
+
+        YAxis RMSSD_yAxis;
+        {
+            RMSSD_yAxis = RMSSDChart.getAxisLeft();
+            RMSSDChart.getAxisRight().setEnabled(false);
+            RMSSD_yAxis.enableGridDashedLine(10f, 10f, 0f);
+            RMSSD_yAxis.setAxisMaximum(1000f);
+            RMSSD_yAxis.setAxisMinimum(0f);
+        }
+
+        if(bpm_values.size() == 0) {
+            setData(count, 0, 0);
+            setData(count, 10, 0);
+            setData(count, 20, 0);
+            setData(count, 180, 0);
+
+            setData(count, 0, 1);
+            setData(count, 10, 1);
+            setData(count, 20, 1);
+            setData(count, 180, 1);
+        }else{
+            setData(count, -1, 0);
+            setData(count, -1, 1);
+        }
+
+        bpmChart.animateX(1500);
+
+        Legend bpm_l = bpmChart.getLegend();
+        bpm_l.setForm(Legend.LegendForm.LINE);
+
+        RMSSDChart.animateX(1500);
+        Legend RMSSD_l = RMSSDChart.getLegend();
+        RMSSD_l.setForm(Legend.LegendForm.LINE);
     }
 
     private void setChart() {
@@ -383,37 +477,60 @@ public class BluetoothConnect extends AppCompatActivity implements OnChartValueS
         ArrayList<Entry> values = new ArrayList<>();
     }
 
-    private void setData(int count, int val) {
+    private void setData(int count, int val, int chartNum) {
 
-        values.add(new Entry(i++, val, getResources().getDrawable(R.drawable.star)));
-        if(values.size()>count){
-            values.remove(0);
+        ArrayList<Entry> values = new ArrayList<>();
+        LineChart chart;
+        String Label;
+        int line_color;
+        Drawable graph_color;
+
+        if(chartNum ==0) {
+            chart = bpmChart;
+            values = bpm_values;
+            Label = "BPM";
+            line_color = ContextCompat.getColor(this,R.color.red);
+            graph_color=ContextCompat.getDrawable(this, R.drawable.fade_red);
+        }else{
+            chart = RMSSDChart;
+            values = RMSSD_values;
+            Label = "RMSSD";
+            line_color = ContextCompat.getColor(this,R.color.teal_line);
+            graph_color=ContextCompat.getDrawable(this, R.drawable.fade_teal);
+
         }
+        if(val != -1) {
+            values.add(new Entry(i++, val, getResources().getDrawable(R.drawable.star)));
+            if (values.size() > count) {
+                values.remove(0);
+            }
+        }
+
         LineDataSet set1;
 
-        if (bpmChart.getData() != null &&
-                bpmChart.getData().getDataSetCount() > 0) {
-            set1 = (LineDataSet) bpmChart.getData().getDataSetByIndex(0);
+        if (chart.getData() != null &&
+                chart.getData().getDataSetCount() > 0) {
+            set1 = (LineDataSet) chart.getData().getDataSetByIndex(0);
             set1.setValues(values);
             set1.notifyDataSetChanged();
-            bpmChart.getData().notifyDataChanged();
-            bpmChart.notifyDataSetChanged();
+            chart.getData().notifyDataChanged();
+            chart.notifyDataSetChanged();
         } else {
-            // create a dataset and give it a type
-            set1 = new LineDataSet(values, "BPM");
 
+            set1 = new LineDataSet(values, Label);
+
+            set1.setMode(LineDataSet.Mode.CUBIC_BEZIER);
+            set1.setCubicIntensity(0.1f);
             set1.setDrawIcons(false);
 
-            // draw dashed line
-            set1.enableDashedLine(10f, 5f, 0f);
-
-            // black lines and points
-            set1.setColor(Color.BLACK);
-            set1.setCircleColor(Color.BLACK);
+            set1.setColor(line_color);
+            set1.setCircleColor(line_color);
 
             // line thickness and point size
-            set1.setLineWidth(1f);
-            set1.setCircleRadius(3f);
+            set1.setLineWidth(2f);
+            set1.setCircleRadius(2f);
+
+
 
             // draw points as solid circles
             set1.setDrawCircleHole(false);
@@ -425,36 +542,32 @@ public class BluetoothConnect extends AppCompatActivity implements OnChartValueS
 
             // text size of values
             set1.setValueTextSize(9f);
+            set1.setValueTextColor(Color.BLACK);
 
-            // draw selection line as dashed
             set1.enableDashedHighlightLine(10f, 5f, 0f);
 
-            // set the filled area
             set1.setDrawFilled(true);
             set1.setFillFormatter(new IFillFormatter() {
                 @Override
                 public float getFillLinePosition(ILineDataSet dataSet, LineDataProvider dataProvider) {
-                    return bpmChart.getAxisLeft().getAxisMinimum();
+                    return chart.getAxisLeft().getAxisMinimum();
                 }
             });
 
-            // set color of filled area
+
             if (Utils.getSDKInt() >= 18) {
-                // drawables only supported on api level 18 and above
-                Drawable drawable = ContextCompat.getDrawable(this, R.drawable.fade_teal);
+                Drawable drawable = graph_color;
                 set1.setFillDrawable(drawable);
             } else {
                 set1.setFillColor(Color.BLACK);
             }
 
             ArrayList<ILineDataSet> dataSets = new ArrayList<>();
-            dataSets.add(set1); // add the data sets
+            dataSets.add(set1);
 
-            // create a data object with the data sets
             LineData data = new LineData(dataSets);
 
-            // set data
-            bpmChart.setData(data);
+            chart.setData(data);
         }
     }
 
