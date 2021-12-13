@@ -77,7 +77,8 @@ public class BluetoothConnect extends AppCompatActivity implements OnChartValueS
     NavigationView navigationview;
 
     int count = 20;
-    public static int i = 0;
+    public static int bpm_i = 0;
+    public static int RMSSD_i = 0;
 
     private Messenger mServiceMessenger = null;
 
@@ -446,15 +447,7 @@ public class BluetoothConnect extends AppCompatActivity implements OnChartValueS
         }
 
         if(bpm_values.size() == 0) {
-            setData(count, 0, 0);
-            setData(count, 10, 0);
-            setData(count, 20, 0);
-            setData(count, 180, 0);
-
-            setData(count, 0, 1);
-            setData(count, 10, 1);
-            setData(count, 20, 1);
-            setData(count, 180, 1);
+            
         }else{
             setData(count, -1, 0);
             setData(count, -1, 1);
@@ -484,6 +477,7 @@ public class BluetoothConnect extends AppCompatActivity implements OnChartValueS
         String Label;
         int line_color;
         Drawable graph_color;
+        int i;
 
         if(chartNum ==0) {
             chart = bpmChart;
@@ -491,18 +485,24 @@ public class BluetoothConnect extends AppCompatActivity implements OnChartValueS
             Label = "BPM";
             line_color = ContextCompat.getColor(this,R.color.red);
             graph_color=ContextCompat.getDrawable(this, R.drawable.fade_red);
+            i = bpm_i;
         }else{
             chart = RMSSDChart;
             values = RMSSD_values;
             Label = "RMSSD";
             line_color = ContextCompat.getColor(this,R.color.teal_line);
             graph_color=ContextCompat.getDrawable(this, R.drawable.fade_teal);
-
+            i = RMSSD_i;
         }
         if(val != -1) {
-            values.add(new Entry(i++, val, getResources().getDrawable(R.drawable.star)));
+            values.add(new Entry(i, val, getResources().getDrawable(R.drawable.star)));
             if (values.size() > count) {
                 values.remove(0);
+            }
+            if(chartNum==0){
+                bpm_i++;
+            }else{
+                RMSSD_i++;
             }
         }
 
